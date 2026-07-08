@@ -1,0 +1,422 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider   = "prisma-client-js"
+}
+
+// Better Auth and Core User System
+model User {
+  id            String            @id @default(uuid())
+  name          String
+  username      String?           @unique
+  email         String            @unique
+  emailVerified Boolean           @default(false)
+  phone         String?
+  password      String?
+  provider      String?
+  image         String?
+  avatar        String?
+  status        String            @default("active")
+  role          String            @default("user")
+  subscription  String            @default("free")
+  lastLogin     DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+  
+  accounts      Account[]
+  sessions      Session[]
+  memberships   WorkspaceMember[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+}
+
+model Account {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerId   String
+  accountId    String
+  accessToken  String?
+  refreshToken String?
+  idToken      String?
+  expiresAt    DateTime?
+  password     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// RBAC
+model Role {
+  id          String            @id @default(uuid())
+  name        String            @unique
+  description String?
+  permissions RolePermission[]
+  memberships WorkspaceMember[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  deletedAt   DateTime?
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  name        String           @unique // e.g., "links:create"
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+// Workspaces and Teams (Multi-tenancy)
+model Workspace {
+  id            String            @id @default(uuid())
+  name          String
+  slug          String            @unique
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+  
+  members       WorkspaceMember[]
+  profiles      Profile[]
+  qrs           QRCode[]
+  customDomain  CustomDomain?
+  subscriptions Subscription[]
+  payments      Payment[]
+  transactions  Transaction[]
+  media         Media[]
+  apiKeys       APIKey[]
+  auditLogs     AuditLog[]
+  webhooks      Webhook[]
+}
+
+model WorkspaceMember {
+  id          String    @id @default(uuid())
+  workspaceId String
+  userId      String
+  roleId      String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        Role      @relation(fields: [roleId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([workspaceId, userId])
+}
+
+// Profiles & Links (Linktree Core)
+model Profile {
+  id            String         @id @default(uuid())
+  workspaceId   String
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  username      String         @unique
+  title         String?
+  bio           String?
+  avatarUrl     String?
+  themeSettings Json?          // colors, layouts, custom css
+  isPublished   Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  deletedAt     DateTime?
+  
+  links         Link[]
+  socialLinks   SocialLink[]
+  categories    Category[]
+  qrs           QRCode[]
+  analytics     Analytics[]
+  clickEvents   ClickEvent[]
+  
+  @@index([username])
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  profileId String
+  profile   Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  
+  links     Link[]
+}
+
+model Link {
+  id           String       @id @default(uuid())
+  profileId    String
+  profile      Profile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  categoryId   String?
+  category     Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  title        String
+  url          String
+  thumbnailUrl String?
+  isPinned     Boolean      @default(false)
+  isArchived   Boolean      @default(false)
+  settings     Json?        // schedule, password protection, redirect override
+  sortOrder    Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  deletedAt    DateTime?
+  
+  clickEvents  ClickEvent[]
+  analytics    Analytics[]
+}
+
+model SocialLink {
+  id        String    @id @default(uuid())
+  profileId String
+  profile   Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  platform  String    // e.g., "GITHUB", "LINKEDIN"
+  url       String
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+// Custom Domain Config
+model CustomDomain {
+  id          String    @id @default(uuid())
+  workspaceId String    @unique
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  domain      String    @unique
+  sslEnabled  Boolean   @default(false)
+  dnsVerified Boolean   @default(false)
+  status      String    @default("PENDING") // PENDING, ACTIVE, FAILED
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+// Media
+model Media {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  fileName    String
+  fileKey     String    @unique
+  mimeType    String
+  fileSize    Int
+  url         String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+// API Keys
+model APIKey {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  keyHash     String    @unique
+  maskedKey   String
+  scopes      Json
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+// Notifications
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String    // IN_APP, EMAIL, WHATSAPP
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+// Audit Logs
+model AuditLog {
+  id          String    @id @default(uuid())
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  action      String
+  entityType  String
+  entityId    String?
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+}
+
+// QR Codes
+model QRCode {
+  id             String    @id @default(uuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  profileId      String?
+  profile        Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  qrData         String
+  designSettings Json?
+  imageUrl       String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+}
+
+// Payments & Subscriptions
+model Plan {
+  id             String         @id @default(uuid())
+  name           String
+  code           String         @unique // e.g. "free", "pro", "enterprise"
+  description    String?
+  priceMonthly   Float
+  priceYearly    Float
+  currency       String         @default("USD")
+  stripePriceId  String?
+  razorpayPlanId String?
+  features       Json
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+  
+  subscriptions  Subscription[]
+}
+
+model Subscription {
+  id                     String    @id @default(uuid())
+  workspaceId            String
+  workspace              Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  planId                 String
+  plan                   Plan      @relation(fields: [planId], references: [id])
+  status                 String    // ACTIVE, CANCELED, PAST_DUE, TRIALING
+  provider               String    // STRIPE, RAZORPAY
+  providerSubscriptionId String    @unique
+  currentPeriodEnd       DateTime
+  cancelAtPeriodEnd      Boolean   @default(false)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  deletedAt              DateTime?
+  
+  payments               Payment[]
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  workspaceId       String
+  workspace         Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subscriptionId    String?
+  subscription      Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  amount            Float
+  currency          String
+  status            String        // SUCCESS, FAILED, PENDING
+  provider          String        // STRIPE, RAZORPAY
+  providerPaymentId String        @unique
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?
+  
+  transactions      Transaction[]
+}
+
+model Transaction {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  paymentId   String?
+  payment     Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  type        String    // CHARGE, REFUND, CREDIT
+  amount      Float
+  status      String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+// Analytics Core (Pre-aggregated + raw)
+model ClickEvent {
+  id          String   @id @default(uuid())
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  linkId      String?
+  link        Link?    @relation(fields: [linkId], references: [id], onDelete: SetNull)
+  visitorId   String
+  country     String?
+  city        String?
+  device      String?
+  os          String?
+  browser     String?
+  referrer    String?
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  createdAt   DateTime @default(now())
+
+  @@index([profileId, createdAt])
+  @@index([linkId, createdAt])
+}
+
+model Analytics {
+  id           String   @id @default(uuid())
+  profileId    String
+  profile      Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  linkId       String?
+  link         Link?    @relation(fields: [linkId], references: [id], onDelete: SetNull)
+  date         DateTime
+  clicksCount  Int      @default(0)
+  visitorsCount Int     @default(0)
+  countryCode  String?
+  deviceType   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([profileId, linkId, date, countryCode, deviceType])
+  @@index([profileId, date])
+}
+
+// Webhooks
+model Webhook {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  url         String
+  secret      String
+  events      Json      // array of events e.g. ["link.clicked"]
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}

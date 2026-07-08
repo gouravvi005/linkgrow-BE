@@ -1,0 +1,1 @@
+{"version":3,"file":"authData.js","sourceRoot":"","sources":["../../../src/mock-data/authData.ts"],"names":[],"mappings":";;;AAAa,QAAA,cAAc,GAAG;IAC1B;QACI,EAAE,EAAE,IAAI;QACR,MAAM,EAAE,0BAA0B;QAClC,QAAQ,EAAE,kBAAkB;QAC5B,KAAK,EAAE,mBAAmB;QAC1B,SAAS,EAAE,CAAC,OAAO,EAAE,MAAM,CAAC;QAC5B,QAAQ,EAAE,QAAQ;QAClB,eAAe,EAAE,OAAO;KAC3B;CACJ,CAAA"}
